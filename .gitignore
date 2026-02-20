@@ -141,6 +141,7 @@ data/
 *.swp
 *.swo
 *~
+*.bak
 
 # Bot-specific
 sessions/

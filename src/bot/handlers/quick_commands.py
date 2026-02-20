@@ -135,6 +135,9 @@ _HANDLERS = {
 }
 
 
+MAX_INPUT_LENGTH = 2000  # Cap input to prevent abuse
+
+
 def route_command(text: str) -> Optional[str]:
     """Route a !command. Returns response string or None if not a command."""
     if not text.startswith("!"):
@@ -143,6 +146,9 @@ def route_command(text: str) -> Optional[str]:
     parts = text.split(None, 1)
     cmd = parts[0].lower()
     args = parts[1].strip() if len(parts) > 1 else ""
+
+    if len(args) > MAX_INPUT_LENGTH:
+        return f"Input too long ({len(args)} chars). Max {MAX_INPUT_LENGTH}."
 
     handler = _HANDLERS.get(cmd)
     if handler:

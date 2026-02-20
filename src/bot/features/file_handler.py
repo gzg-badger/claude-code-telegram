@@ -51,7 +51,7 @@ class FileHandler:
         self.config = config
         self.security = security
         self.temp_dir = Path("/tmp/claude_bot_files")
-        self.temp_dir.mkdir(exist_ok=True)
+        self.temp_dir.mkdir(mode=0o700, exist_ok=True)
 
         # Supported code extensions
         self.code_extensions = {

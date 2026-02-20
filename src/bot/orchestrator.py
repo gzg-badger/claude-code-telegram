@@ -27,6 +27,7 @@ from telegram.ext import (
 
 from ..claude.exceptions import ClaudeToolValidationError
 from ..claude.sdk_integration import StreamUpdate
+from ..security.redaction import redact_secrets
 from .handlers.voice_handler import handle_voice
 from ..config.settings import Settings
 from ..projects import PrivateTopicsUnavailableError
@@ -821,6 +822,7 @@ class MessageOrchestrator:
         await progress_msg.delete()
 
         for i, message in enumerate(formatted_messages):
+            message.text = redact_secrets(message.text)
             try:
                 await update.message.reply_text(
                     message.text,
@@ -984,6 +986,7 @@ class MessageOrchestrator:
             await progress_msg.delete()
 
             for i, message in enumerate(formatted_messages):
+                message.text = redact_secrets(message.text)
                 await update.message.reply_text(
                     message.text,
                     parse_mode=message.parse_mode,
@@ -1029,7 +1032,7 @@ class MessageOrchestrator:
                 suffix = ".jpg"
 
             # Save to temp dir that Claude Code can access
-            os.makedirs("/tmp/bb3k-photos", exist_ok=True)
+            os.makedirs("/tmp/bb3k-photos", mode=0o700, exist_ok=True)
             with tempfile.NamedTemporaryFile(
                 suffix=suffix, dir="/tmp/bb3k-photos", delete=False
             ) as tmp:
@@ -1100,6 +1103,7 @@ class MessageOrchestrator:
             await progress_msg.delete()
 
             for i, message in enumerate(formatted_messages):
+                message.text = redact_secrets(message.text)
                 await update.message.reply_text(
                     message.text,
                     parse_mode=message.parse_mode,
