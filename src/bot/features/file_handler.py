@@ -235,8 +235,11 @@ class FileHandler:
                         # Prevent path traversal
                         if member.name.startswith("/") or ".." in member.name:
                             continue
+                        # Prevent symlink escape (S6)
+                        if member.issym() or member.islnk():
+                            continue
 
-                        tf.extract(member, extract_dir)
+                        tf.extract(member, extract_dir, filter="data")
 
             # Analyze contents
             file_tree = self._build_file_tree(extract_dir)

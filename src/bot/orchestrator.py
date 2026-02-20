@@ -6,7 +6,10 @@ classic mode, delegates to existing full-featured handlers.
 """
 
 import asyncio
+import base64
+import os
 import re
+import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -24,6 +27,7 @@ from telegram.ext import (
 
 from ..claude.exceptions import ClaudeToolValidationError
 from ..claude.sdk_integration import StreamUpdate
+from .handlers.voice_handler import handle_voice
 from ..config.settings import Settings
 from ..projects import PrivateTopicsUnavailableError
 from .utils.html_format import escape_html
@@ -320,6 +324,12 @@ class MessageOrchestrator:
             group=10,
         )
 
+        # Voice notes -> transcribe then Claude
+        app.add_handler(
+            MessageHandler(filters.VOICE, self._inject_deps(handle_voice)),
+            group=10,
+        )
+
         # Only cd: callbacks (for project selection), scoped by pattern
         app.add_handler(
             CallbackQueryHandler(
@@ -370,6 +380,10 @@ class MessageOrchestrator:
         )
         app.add_handler(
             MessageHandler(filters.PHOTO, self._inject_deps(message.handle_photo)),
+            group=10,
+        )
+        app.add_handler(
+            MessageHandler(filters.VOICE, self._inject_deps(handle_voice)),
             group=10,
         )
         app.add_handler(
@@ -992,25 +1006,51 @@ class MessageOrchestrator:
     async def agentic_photo(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
     ) -> None:
-        """Process photo -> Claude, minimal chrome."""
+        """Process photo -> Claude via temp file (Claude Code reads images natively)."""
         user_id = update.effective_user.id
-
-        features = context.bot_data.get("features")
-        image_handler = features.get_image_handler() if features else None
-
-        if not image_handler:
-            await update.message.reply_text("Photo processing is not available.")
-            return
 
         chat = update.message.chat
         await chat.send_action("typing")
         progress_msg = await update.message.reply_text("Working...")
 
+        tmp_path = None
         try:
+            # Download highest-res photo to temp file
             photo = update.message.photo[-1]
-            processed_image = await image_handler.process_image(
-                photo, update.message.caption
-            )
+            file = await context.bot.get_file(photo.file_id)
+
+            # Determine extension from file path
+            file_path = file.file_path or ""
+            if file_path.lower().endswith(".png"):
+                suffix = ".png"
+            elif file_path.lower().endswith(".webp"):
+                suffix = ".webp"
+            else:
+                suffix = ".jpg"
+
+            # Save to temp dir that Claude Code can access
+            os.makedirs("/tmp/bb3k-photos", exist_ok=True)
+            with tempfile.NamedTemporaryFile(
+                suffix=suffix, dir="/tmp/bb3k-photos", delete=False
+            ) as tmp:
+                tmp_path = tmp.name
+            await file.download_to_drive(tmp_path)
+
+            # Build prompt that tells Claude to read the image file
+            caption = update.message.caption or ""
+            if caption:
+                prompt = (
+                    f"George sent a photo via Telegram with caption: \"{caption}\"\n\n"
+                    f"The image is saved at: {tmp_path}\n"
+                    f"Please read that file to view the image, then respond to the caption/question."
+                )
+            else:
+                prompt = (
+                    f"George sent a photo via Telegram (no caption).\n\n"
+                    f"The image is saved at: {tmp_path}\n"
+                    f"Please read that file to view the image and describe what you see. "
+                    f"Ask if George needs help with anything specific about it."
+                )
 
             claude_integration = context.bot_data.get("claude_integration")
             if not claude_integration:
@@ -1024,8 +1064,6 @@ class MessageOrchestrator:
             )
             session_id = context.user_data.get("claude_session_id")
 
-            # Check if /new was used — skip auto-resume for this first message.
-            # Flag is only cleared after a successful run so retries keep the intent.
             force_new = bool(context.user_data.get("force_new_session"))
 
             verbose_level = self._get_verbose_level(context)
@@ -1037,7 +1075,7 @@ class MessageOrchestrator:
             heartbeat = self._start_typing_heartbeat(chat)
             try:
                 claude_response = await claude_integration.run_command(
-                    prompt=processed_image.prompt,
+                    prompt=prompt,
                     working_directory=current_dir,
                     user_id=user_id,
                     session_id=session_id,
@@ -1080,6 +1118,13 @@ class MessageOrchestrator:
             logger.error(
                 "Claude photo processing failed", error=str(e), user_id=user_id
             )
+        finally:
+            # Clean up temp image file
+            if tmp_path:
+                try:
+                    os.unlink(tmp_path)
+                except OSError:
+                    pass
 
     async def agentic_repo(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE

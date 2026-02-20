@@ -134,7 +134,9 @@ async def create_application(config: Settings) -> Dict[str, Any]:
     rate_limiter = RateLimiter(config)
 
     # Create audit storage and logger
-    audit_storage = InMemoryAuditStorage()  # TODO: Use database storage in production
+    # Audit events logged to structlog (persisted via journald) + in-memory for dashboard
+    # TODO: Wire up DatabaseAuditStorage once schema migration is verified
+    audit_storage = InMemoryAuditStorage()
     audit_logger = AuditLogger(audit_storage)
 
     # Create Claude integration components with persistent storage

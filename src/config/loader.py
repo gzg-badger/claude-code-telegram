@@ -78,7 +78,12 @@ def load_config(
 
 
 def _apply_environment_overrides(settings: Settings, env: Optional[str]) -> Settings:
-    """Apply environment-specific configuration overrides."""
+    """Apply environment-specific configuration overrides.
+
+    Only applies overrides for settings NOT explicitly set via environment variables.
+    This ensures env vars (from .env or EnvironmentFile) take precedence over
+    environment class defaults.
+    """
     overrides = {}
 
     if env == "development":
@@ -90,13 +95,25 @@ def _apply_environment_overrides(settings: Settings, env: Optional[str]) -> Sett
     else:
         logger.warning("Unknown environment, using default settings", environment=env)
 
-    # Apply overrides
+    # Apply overrides — but respect explicitly set env vars
     for key, value in overrides.items():
         if hasattr(settings, key):
-            setattr(settings, key, value)
-            logger.debug(
-                "Applied environment override", key=key, value=value, environment=env
-            )
+            env_var_name = key.upper()
+            if env_var_name in os.environ:
+                logger.debug(
+                    "Skipping override (env var set)",
+                    key=key,
+                    env_var=env_var_name,
+                    environment=env,
+                )
+            else:
+                setattr(settings, key, value)
+                logger.debug(
+                    "Applied environment override",
+                    key=key,
+                    value=value,
+                    environment=env,
+                )
 
     return settings
 

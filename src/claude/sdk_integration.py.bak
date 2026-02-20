@@ -203,16 +203,6 @@ class ClaudeSDKManager:
             "- Scratchpad: memory/SCRATCHPAD.md\n"
             "- Exec todo: Asana (via scripts/asana_api.py)\n\n"
 
-            "## Browser Automation (Firecrawl)\n"
-            "You can browse the web using Firecrawl browser sandbox:\n"
-            "Create: SID=$(python3 scripts/firecrawl_api.py browser create | "
-            "python3 -c \"import sys,json; print(json.load(sys.stdin)['id'])\")\n"
-            "Navigate: python3 scripts/firecrawl_api.py browser exec $SID \"code\" --lang python\n"
-            "Screenshot: python3 scripts/firecrawl_api.py browser screenshot $SID /tmp/shot.png\n"
-            "Close: python3 scripts/firecrawl_api.py browser close $SID\n"
-            "ALWAYS close sessions (costs 2 credits/min). Max 5 min per session.\n"
-            "NEVER enter passwords or payment details without George's approval.\n\n"
-
             "# Rules\n"
             "- NEVER send emails directly — draft only\n"
             "- NEVER guess employee names — verify against the employee directory\n"

@@ -13,6 +13,8 @@ from ...security.audit import AuditLogger
 from ...security.rate_limiter import RateLimiter
 from ...security.validators import SecurityValidator
 from ..utils.html_format import escape_html
+from ...security.redaction import redact_secrets
+from ..handlers.quick_commands import route_command
 
 logger = structlog.get_logger()
 
@@ -140,6 +142,13 @@ async def handle_text_message(
     """Handle regular text messages as Claude prompts."""
     user_id = update.effective_user.id
     message_text = update.message.text
+
+    # Quick command handler (!note, !task, etc) - bypass Claude
+    quick_result = route_command(message_text)
+    if quick_result is not None:
+        await update.message.reply_text(quick_result)
+        return
+
     settings: Settings = context.bot_data["settings"]
 
     # Get services
@@ -275,6 +284,8 @@ async def handle_text_message(
 
         # Send formatted responses (may be multiple messages)
         for i, message in enumerate(formatted_messages):
+            # Redact any secrets before sending to Telegram
+            message.text = redact_secrets(message.text)
             try:
                 await update.message.reply_text(
                     message.text,

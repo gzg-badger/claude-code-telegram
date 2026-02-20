@@ -41,11 +41,11 @@ async def security_middleware(
         return await handler(event, data)
 
     # In agentic mode, user text is a prompt to Claude — not a command.
-    # Skip input validation so natural conversation (backticks, paths, etc.) works.
+    # We use lighter validation: block credential access and RCE, allow normal conversation.
     settings = data.get("settings")
     agentic_mode = getattr(settings, "agentic_mode", False) if settings else False
 
-    # Validate text content if present (classic mode only)
+    # Validate text content if present
     message = event.effective_message
     if message and message.text and not agentic_mode:
         is_safe, violation_type = await validate_message_content(
@@ -60,6 +60,32 @@ async def security_middleware(
                 parse_mode="HTML",
             )
             return  # Block processing
+
+
+    # Agentic mode: lighter validation — block credential theft and RCE only
+    if message and message.text and agentic_mode:
+        import re as _re
+        agentic_blocked = [
+            _re.compile(r"cat\s+.*\.credentials", _re.IGNORECASE),
+            _re.compile(r"cat\s+/etc/shadow", _re.IGNORECASE),
+            _re.compile(r"curl\s+.*\|\s*(ba)?sh", _re.IGNORECASE),
+            _re.compile(r"wget\s+.*\|\s*(ba)?sh", _re.IGNORECASE),
+            _re.compile(r"base64\s+-d.*\|\s*(ba)?sh", _re.IGNORECASE),
+        ]
+        for pattern in agentic_blocked:
+            if pattern.search(message.text):
+                if audit_logger:
+                    await audit_logger.log_security_violation(
+                        user_id=user_id,
+                        violation_type="agentic_blocked_pattern",
+                        details=f"Blocked in agentic mode: {pattern.pattern}",
+                        severity="high",
+                        attempted_action="message_send",
+                    )
+                await message.reply_text(
+                    "\U0001f6e1\ufe0f This message was blocked for security reasons.",
+                )
+                return
 
     # Validate file uploads if present
     if message and message.document:
