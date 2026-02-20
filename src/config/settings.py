@@ -95,8 +95,6 @@ class Settings(BaseSettings):
             "LS",
             "Task",
             "MultiEdit",
-            "NotebookRead",
-            "NotebookEdit",
             "WebFetch",
             "TodoRead",
             "TodoWrite",
