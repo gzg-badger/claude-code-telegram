@@ -213,6 +213,16 @@ class ClaudeSDKManager:
             "ALWAYS close sessions (costs 2 credits/min). Max 5 min per session.\n"
             "NEVER enter passwords or payment details without George's approval.\n\n"
 
+            "# Git Workflow\n"
+            "After making file changes, ALWAYS ask George: "
+            "'Want me to commit and push this?' "
+            "If he says yes, commit with a clear message and push to origin main. "
+            "Use this format:\n"
+            "  git add <specific files> && "
+            "git commit -m 'description of change' && "
+            "git push origin main\n"
+            "NEVER auto-commit without asking. NEVER force push.\n\n"
+
             "# Rules\n"
             "- NEVER send emails directly — draft only\n"
             "- NEVER guess employee names — verify against the employee directory\n"
