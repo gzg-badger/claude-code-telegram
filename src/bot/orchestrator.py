@@ -714,6 +714,19 @@ class MessageOrchestrator:
             message_length=len(message_text),
         )
 
+        # --- Query routing (Tier 0: instant responses) ---
+        if self.settings.enable_query_routing:
+            from .query_classifier import classify
+
+            tier, instant_response = classify(message_text)
+            logger.info("Query classified", tier=tier, user_id=user_id)
+
+            if tier == "instant" and instant_response:
+                await update.message.reply_text(instant_response)
+                return
+        else:
+            tier = "full"
+
         # Rate limit check
         rate_limiter = context.bot_data.get("rate_limiter")
         if rate_limiter:
@@ -744,6 +757,16 @@ class MessageOrchestrator:
         # Flag is only cleared after a successful run so retries keep the intent.
         force_new = bool(context.user_data.get("force_new_session"))
 
+        # --- Tier-specific model routing ---
+        if tier == "fast":
+            model_override = self.settings.fast_model
+            max_turns_override = self.settings.fast_max_turns
+            effort_override = self.settings.fast_effort
+        else:
+            model_override = None
+            max_turns_override = None
+            effort_override = None
+
         # --- Verbose progress tracking via stream callback ---
         tool_log: List[Dict[str, Any]] = []
         start_time = time.time()
@@ -763,6 +786,9 @@ class MessageOrchestrator:
                 session_id=session_id,
                 on_stream=on_stream,
                 force_new=force_new,
+                model_override=model_override,
+                max_turns_override=max_turns_override,
+                effort_override=effort_override,
             )
 
             # New session created successfully — clear the one-shot flag

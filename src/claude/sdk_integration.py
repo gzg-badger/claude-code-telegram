@@ -243,6 +243,9 @@ class ClaudeSDKManager:
         session_id: Optional[str] = None,
         continue_session: bool = False,
         stream_callback: Optional[Callable[[StreamUpdate], None]] = None,
+        model_override: Optional[str] = None,
+        max_turns_override: Optional[int] = None,
+        effort_override: Optional[str] = None,
     ) -> ClaudeResponse:
         """Execute Claude Code command via SDK."""
         start_time = asyncio.get_event_loop().time()
@@ -257,8 +260,13 @@ class ClaudeSDKManager:
         try:
             # Build Claude Agent options
             cli_path = find_claude_cli(self.config.claude_cli_path)
+
+            effective_model = model_override or self.config.claude_model
+            effective_max_turns = max_turns_override or self.config.claude_max_turns
+
             options = ClaudeAgentOptions(
-                max_turns=self.config.claude_max_turns,
+                model=effective_model,
+                max_turns=effective_max_turns,
                 cwd=str(working_directory),
                 allowed_tools=self.config.claude_allowed_tools,
                 disallowed_tools=self.config.claude_disallowed_tools,
@@ -269,6 +277,23 @@ class ClaudeSDKManager:
                     "excludedCommands": self.config.sandbox_excluded_commands or [],
                 },
                 system_prompt=self._build_system_prompt(working_directory),
+            )
+
+            # Set effort if provided (may not be supported on all SDK versions)
+            if effort_override:
+                try:
+                    options.effort = effort_override
+                except (AttributeError, TypeError):
+                    logger.debug(
+                        "effort parameter not supported by SDK",
+                        effort=effort_override,
+                    )
+
+            logger.info(
+                "Claude options configured",
+                model=effective_model,
+                max_turns=effective_max_turns,
+                effort=effort_override,
             )
 
             # Pass MCP server configuration if enabled

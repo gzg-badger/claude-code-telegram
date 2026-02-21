@@ -158,6 +158,16 @@ class Settings(BaseSettings):
         description="Conversational agentic mode (default) vs classic command mode",
     )
 
+    # Query routing
+    enable_query_routing: bool = Field(
+        True, description="Enable three-tier query routing (instant/fast/full)"
+    )
+    fast_model: str = Field(
+        "claude-haiku-4-5", description="Model for fast-tier queries"
+    )
+    fast_max_turns: int = Field(3, description="Max turns for fast-tier queries")
+    fast_effort: str = Field("low", description="Effort level for fast-tier queries")
+
     # Output verbosity (0=quiet, 1=normal, 2=detailed)
     verbose_level: int = Field(
         1,
