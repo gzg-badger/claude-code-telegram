@@ -5,10 +5,14 @@ Features:
 - Security validation
 - Usage analytics
 - Bash directory boundary enforcement
+- Protected file modification audit logging
 """
 
+import json
 import shlex
+import subprocess
 from collections import defaultdict
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 
@@ -18,6 +22,60 @@ from ..config.settings import Settings
 from ..security.validators import SecurityValidator
 
 logger = structlog.get_logger()
+
+# Protected file patterns — modifications to these are audit-logged
+_PROTECTED_FILE_PATTERNS = [
+    "CLAUDE.md",
+    ".claude/rules/",
+    ".claude/hooks/",
+    ".claude/settings",
+    ".env",
+    "credentials",
+    "config/",
+]
+
+# Audit log location
+_AUDIT_LOG_PATH = Path.home() / "bb3k" / "data" / "file-modifications.jsonl"
+
+
+def _is_protected_file(file_path: str) -> bool:
+    """Check if a file path matches any protected pattern."""
+    for pattern in _PROTECTED_FILE_PATTERNS:
+        if pattern in file_path:
+            return True
+    return False
+
+
+def _audit_log_modification(tool_name: str, file_path: str, user_id: int) -> None:
+    """Log a protected file modification to the audit JSONL file."""
+    entry = {
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "tool": tool_name,
+        "file": file_path,
+        "user_id": user_id,
+        "source": "telegram-bot",
+    }
+
+    try:
+        _AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(_AUDIT_LOG_PATH, "a") as f:
+            f.write(json.dumps(entry) + "\n")
+    except Exception as e:
+        logger.error("Failed to write audit log", error=str(e))
+
+    # Send Telegram notification for protected file modification
+    try:
+        notify_script = Path.home() / "bb3k" / "scripts" / "telegram_notify.py"
+        if notify_script.exists():
+            basename = Path(file_path).name
+            msg = f"⚠️ Protected file modified via Telegram bot: {basename}\nTool: {tool_name}\nFull path: {file_path}"
+            subprocess.Popen(
+                ["python3", str(notify_script), msg],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+    except Exception as e:
+        logger.warning("Failed to send audit notification", error=str(e))
 
 # Commands that modify the filesystem and should have paths checked
 _FS_MODIFYING_COMMANDS: Set[str] = {
@@ -218,6 +276,17 @@ class ToolMonitor:
             if not file_path:
                 return False, "File path required"
 
+            # Audit log protected file modifications (Write/Edit only)
+            if tool_name in ["Write", "Edit", "create_file", "edit_file"]:
+                if _is_protected_file(file_path):
+                    logger.warning(
+                        "Protected file modification attempt",
+                        tool_name=tool_name,
+                        file_path=file_path,
+                        user_id=user_id,
+                    )
+                    _audit_log_modification(tool_name, file_path, user_id)
+
             # Validate path security
             if self.security_validator:
                 valid, resolved_path, error = self.security_validator.validate_path(
@@ -236,6 +305,22 @@ class ToolMonitor:
                     self.security_violations.append(violation)
                     logger.warning("Invalid file path in tool call", **violation)
                     return False, error
+
+        # Audit git push commands that may include protected files
+        if tool_name in ["bash", "shell", "Bash"]:
+            command = tool_input.get("command", "")
+            if "git push" in command:
+                # Check if any protected files were staged
+                for pattern in _PROTECTED_FILE_PATTERNS:
+                    if pattern in command:
+                        logger.warning(
+                            "Git push with protected file reference",
+                            command=command,
+                            pattern=pattern,
+                            user_id=user_id,
+                        )
+                        _audit_log_modification("git_push", f"command: {command[:200]}", user_id)
+                        break
 
         # Validate shell commands (skip in agentic mode — Claude Code runs
         # inside its own sandbox, and these patterns block normal gh/git usage)
