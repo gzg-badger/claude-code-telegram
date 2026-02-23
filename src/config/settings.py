@@ -252,6 +252,18 @@ class Settings(BaseSettings):
             return [str(tool) for tool in v]
         return v  # type: ignore[no-any-return]
 
+    @field_validator("claude_disallowed_tools", mode="before")
+    @classmethod
+    def parse_claude_disallowed_tools(cls, v: Any) -> Optional[List[str]]:
+        """Parse comma-separated tool names."""
+        if v is None:
+            return None
+        if isinstance(v, str):
+            return [tool.strip() for tool in v.split(",") if tool.strip()]
+        if isinstance(v, list):
+            return [str(tool) for tool in v]
+        return v  # type: ignore[no-any-return]
+
     @field_validator("approved_directory")
     @classmethod
     def validate_approved_directory(cls, v: Any) -> Path:
