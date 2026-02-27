@@ -1058,9 +1058,9 @@ class MessageOrchestrator:
                 suffix = ".jpg"
 
             # Save to temp dir that Claude Code can access
-            os.makedirs("/tmp/bb3k-photos", mode=0o700, exist_ok=True)
+            os.makedirs("/home/bb3k/tmp/photos", mode=0o700, exist_ok=True)
             with tempfile.NamedTemporaryFile(
-                suffix=suffix, dir="/tmp/bb3k-photos", delete=False
+                suffix=suffix, dir="/home/bb3k/tmp/photos", delete=False
             ) as tmp:
                 tmp_path = tmp.name
             await file.download_to_drive(tmp_path)
