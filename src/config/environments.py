@@ -57,6 +57,7 @@ class ProductionConfig:
     log_level: str = "INFO"
     enable_telemetry: bool = True
     # Use stricter defaults for production
+    claude_timeout_seconds: int = 900  # 15 min — meeting prep needs headroom
     claude_max_cost_per_user: float = 5.0  # Lower cost limit
     rate_limit_requests: int = 5  # Stricter rate limiting
     session_timeout_hours: int = 12  # Shorter session timeout
