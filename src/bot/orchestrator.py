@@ -797,6 +797,22 @@ class MessageOrchestrator:
 
             context.user_data["claude_session_id"] = claude_response.session_id
 
+            # Guard: empty response (e.g. expired server-side session)
+            if not claude_response.content or not claude_response.content.strip():
+                logger.warning("Empty Claude response", user_id=user_id, session_id=session_id)
+                from .utils.formatting import FormattedMessage
+                formatted_messages = [FormattedMessage(
+                    "Claude didn't produce a response. Try /new to start a fresh session.",
+                    parse_mode="HTML",
+                )]
+                await progress_msg.delete()
+                for message in formatted_messages:
+                    await update.message.reply_text(
+                        message.text, parse_mode=message.parse_mode,
+                        reply_to_message_id=update.message.message_id,
+                    )
+                return
+
             # Track directory changes
             from .handlers.message import _update_working_directory_from_claude_response
 
