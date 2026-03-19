@@ -229,8 +229,11 @@ async def run_application(app: Dict[str, Any]) -> None:
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    # Write PID file so ExecStartPre can kill stale instances on restart
-    pid_file = Path("/tmp/bb3k-telegram-v2.pid")
+    # Write PID file for stale instance detection on restart.
+    # Prefer RuntimeDirectory (/run/bb3k-telegram/) when available (systemd),
+    # fall back to /tmp for manual runs.
+    runtime_dir = os.environ.get("RUNTIME_DIRECTORY", "/tmp")
+    pid_file = Path(runtime_dir) / "bb3k-telegram-v2.pid"
     pid_file.write_text(str(os.getpid()))
 
     try:
