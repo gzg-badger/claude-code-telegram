@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
@@ -228,6 +229,10 @@ async def run_application(app: Dict[str, Any]) -> None:
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
+    # Write PID file so ExecStartPre can kill stale instances on restart
+    pid_file = Path("/tmp/bb3k-telegram-v2.pid")
+    pid_file.write_text(str(os.getpid()))
+
     try:
         logger.info("Starting Claude Code Telegram Bot")
 
@@ -378,6 +383,9 @@ async def run_application(app: Dict[str, Any]) -> None:
             await storage.close()
         except Exception as e:
             logger.error("Error during shutdown", error=str(e))
+
+        # Clean up PID file
+        pid_file.unlink(missing_ok=True)
 
         logger.info("Application shutdown complete")
 
