@@ -173,6 +173,18 @@ async def _try_record_webhook(
         return inserted
 
 
+def _port_in_use(host: str, port: int) -> bool:
+    """Check if a port is already bound."""
+    import socket
+
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        try:
+            s.bind((host, port))
+            return False
+        except OSError:
+            return True
+
+
 async def run_api_server(
     event_bus: EventBus,
     settings: Settings,
@@ -180,43 +192,36 @@ async def run_api_server(
 ) -> None:
     """Run the FastAPI server using uvicorn.
 
-    Handles port conflicts gracefully — retries once after a short delay
-    (handles TIME_WAIT from previous instance), then gives up without
-    crashing the main bot process.
+    Checks port availability before starting. If the port is in use (e.g.
+    TIME_WAIT from a previous instance), retries once after a short delay,
+    then gives up without crashing the main bot process.
     """
     import uvicorn
+
+    host = "127.0.0.1"
+    port = settings.api_server_port
+
+    # Pre-check port availability (uvicorn swallows OSError internally)
+    if _port_in_use(host, port):
+        logger.warning(
+            "API server port %d in use, retrying in 3s...", port
+        )
+        await asyncio.sleep(3)
+        if _port_in_use(host, port):
+            logger.error(
+                "API server port %d still in use after retry — "
+                "health endpoint unavailable, bot continues without it",
+                port,
+            )
+            return
 
     app = create_api_app(event_bus, settings, db_manager)
 
     config = uvicorn.Config(
         app=app,
-        host="127.0.0.1",
-        port=settings.api_server_port,
+        host=host,
+        port=port,
         log_level="info" if not settings.debug else "debug",
     )
     server = uvicorn.Server(config)
-
-    for attempt in range(2):
-        try:
-            await server.serve()
-            return
-        except OSError as e:
-            if "address already in use" in str(e).lower() or e.errno == 98:
-                if attempt == 0:
-                    logger.warning(
-                        "API server port %d in use, retrying in 2s...",
-                        settings.api_server_port,
-                    )
-                    await asyncio.sleep(2)
-                    # Recreate server for retry
-                    server = uvicorn.Server(config)
-                else:
-                    logger.error(
-                        "API server port %d still in use after retry — "
-                        "health endpoint unavailable, bot continues without it",
-                        settings.api_server_port,
-                    )
-                    return
-            else:
-                logger.error("API server failed: %s", e)
-                return
+    await server.serve()
