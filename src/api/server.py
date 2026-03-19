@@ -4,6 +4,7 @@ Runs in the same process as the bot, sharing the event loop.
 Receives external webhooks and publishes them as events on the bus.
 """
 
+import asyncio
 import uuid
 from typing import Any, Dict, Optional
 
@@ -177,7 +178,12 @@ async def run_api_server(
     settings: Settings,
     db_manager: Optional[DatabaseManager] = None,
 ) -> None:
-    """Run the FastAPI server using uvicorn."""
+    """Run the FastAPI server using uvicorn.
+
+    Handles port conflicts gracefully — retries once after a short delay
+    (handles TIME_WAIT from previous instance), then gives up without
+    crashing the main bot process.
+    """
     import uvicorn
 
     app = create_api_app(event_bus, settings, db_manager)
@@ -189,4 +195,28 @@ async def run_api_server(
         log_level="info" if not settings.debug else "debug",
     )
     server = uvicorn.Server(config)
-    await server.serve()
+
+    for attempt in range(2):
+        try:
+            await server.serve()
+            return
+        except OSError as e:
+            if "address already in use" in str(e).lower() or e.errno == 98:
+                if attempt == 0:
+                    logger.warning(
+                        "API server port %d in use, retrying in 2s...",
+                        settings.api_server_port,
+                    )
+                    await asyncio.sleep(2)
+                    # Recreate server for retry
+                    server = uvicorn.Server(config)
+                else:
+                    logger.error(
+                        "API server port %d still in use after retry — "
+                        "health endpoint unavailable, bot continues without it",
+                        settings.api_server_port,
+                    )
+                    return
+            else:
+                logger.error("API server failed: %s", e)
+                return

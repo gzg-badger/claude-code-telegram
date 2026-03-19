@@ -317,21 +317,40 @@ async def run_application(app: Dict[str, Any]) -> None:
         shutdown_task = asyncio.create_task(shutdown_event.wait())
         tasks.append(shutdown_task)
 
-        # Wait for any task to complete or shutdown signal
-        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+        # Wait for any task to complete or shutdown signal.
+        # API server may exit gracefully (port conflict) — that's non-fatal.
+        # Only bot_task failure or shutdown_task should trigger full shutdown.
+        while tasks:
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
 
-        # Check completed tasks for exceptions
-        for task in done:
-            if task.cancelled():
-                continue
-            exc = task.exception()
-            if exc is not None:
-                logger.error(
-                    "Task failed",
-                    task=task.get_name(),
-                    error=str(exc),
-                    error_type=type(exc).__name__,
-                )
+            should_shutdown = False
+            for task in done:
+                if task.cancelled():
+                    continue
+                exc = task.exception()
+                if exc is not None:
+                    logger.error(
+                        "Task failed",
+                        task=task.get_name(),
+                        error=str(exc),
+                        error_type=type(exc).__name__,
+                    )
+
+                if task is bot_task:
+                    logger.info("Bot task ended — shutting down")
+                    should_shutdown = True
+                elif task is shutdown_task:
+                    should_shutdown = True
+                elif features.api_server_enabled and task is api_task:
+                    logger.warning(
+                        "API server exited — bot continues without health endpoint"
+                    )
+
+            if should_shutdown:
+                break
+
+            # Remove completed non-critical tasks and keep waiting
+            tasks = list(pending)
 
         # Cancel remaining tasks
         for task in pending:
