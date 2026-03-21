@@ -4,7 +4,8 @@ Intercepts !-prefixed messages and handles them locally without invoking Claude.
 These are fast local actions that bypass the Claude Code overhead.
 
 Commands:
-    !note <text>     - Append to scratchpad
+    !todo <text>     - Add item to INBOX.md
+    !note <text>     - Add quick note to INBOX.md
     !task <text>     - Create Asana task
     !research <topic> - Queue research topic
     !status          - VPS health dashboard
@@ -39,6 +40,9 @@ def _run_script(args: list, timeout: int = 15) -> tuple[bool, str]:
         )
         if result.returncode == 0:
             return True, result.stdout.strip()
+        if result.returncode == 4:
+            # Write succeeded locally but post-write verification failed (sync conflict)
+            return True, result.stdout.strip() + " [sync verification uncertain]"
         return False, result.stderr[:200] if result.stderr else "Unknown error"
     except subprocess.TimeoutExpired:
         return False, "Command timed out"
@@ -46,14 +50,38 @@ def _run_script(args: list, timeout: int = 15) -> tuple[bool, str]:
         return False, str(e)[:200]
 
 
+def handle_todo(text: str) -> str:
+    """Add item to INBOX.md with due date."""
+    if not text:
+        return "Usage: !todo <task description>"
+    from datetime import datetime, timedelta, timezone
+
+    due = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d")
+    item = f"- [ ] \U0001f7e1 {text} \U0001f4c5 {due}"
+    ok, output = _run_script(
+        [SYSTEM_PYTHON, str(SCRIPTS_DIR / "obsidian_write.py"), "inbox", item,
+         "--section", "\U0001f7e1 This Week"]
+    )
+    if ok:
+        return f"\u2705 Added to inbox: {text}"
+    return f"\u274c Failed: {output}"
+
+
 def handle_note(text: str) -> str:
-    """Append a note to scratchpad."""
+    """Add a quick note to INBOX.md."""
     if not text:
         return "Usage: !note <text>"
+    from datetime import datetime, timedelta, timezone
+
+    due = (datetime.now(timezone.utc) + timedelta(days=7)).strftime("%Y-%m-%d")
+    item = f"- [ ] \U0001f7e1 {text} \U0001f4c5 {due}"
     ok, output = _run_script(
-        [SYSTEM_PYTHON, str(SCRIPTS_DIR / "obsidian_write.py"), "scratchpad", text]
+        [SYSTEM_PYTHON, str(SCRIPTS_DIR / "obsidian_write.py"), "inbox", item,
+         "--section", "\U0001f7e1 This Week"]
     )
-    return "Added to scratchpad." if ok else f"Failed: {output}"
+    if ok:
+        return f"\u2705 Added to inbox: {text}"
+    return f"\u274c Failed: {output}"
 
 
 def handle_task(text: str) -> str:
@@ -116,7 +144,8 @@ def handle_help() -> str:
     """Show available commands."""
     return (
         "BB3K Telegram Commands\n\n"
-        "!note <text> \u2014 Add to scratchpad\n"
+        "!todo <text> \u2014 Add to inbox (with due date)\n"
+        "!note <text> \u2014 Add to inbox (alias for !todo)\n"
         "!task <text> \u2014 Create Asana task\n"
         "!research <topic> \u2014 Queue research\n"
         "!status \u2014 VPS health dashboard\n"
@@ -127,6 +156,7 @@ def handle_help() -> str:
 
 # Command routing table
 _HANDLERS = {
+    "!todo": lambda args: handle_todo(args),
     "!note": lambda args: handle_note(args),
     "!task": lambda args: handle_task(args),
     "!research": lambda args: handle_research(args),
